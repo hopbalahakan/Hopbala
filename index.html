@@ -85,27 +85,11 @@ async function loadLeaderboard(){
   lbList.innerHTML=r.data.map(x=>`<div style="display:flex;justify-content:space-between;padding:9px 6px;border-bottom:1px solid #ffffff18"><b>#${x.rank} ${escapeHtml(x.player_name||'PLAYER')}</b><b>${Math.floor(x.score)}</b></div>`).join('');
  }catch(e){lbStatus.textContent='Leaderboard yüklenemedi.'}
 }
-function escapeHtml(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function escapeHtml(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]));}
 async function saveScore(){
  if(scoreSaved)return;
  await loadSupabase();
  if(!sb)return;
- const name=(playerNameEl.value.trim()||'PLAYER').slice(0,16);localStorage.setItem('shPlayerName',name);
- try{const r=await sb.from('Leaderboard').insert({player_name:name,score:Math.floor(score),rank:0});if(!r.error)scoreSaved=true}catch(e){}
-}
-loadSupabase();
- for(let i=0;i<30 && !sb;i++)await new Promise(r=>setTimeout(r,100));
- if(!sb){lbStatus.textContent='Leaderboard bağlantısı şu an kullanılamıyor.';return}
- try{
-  const r=await sb.from('leaderboard_ranked').select('rank,player_name,score,created_at').order('rank',{ascending:true}).limit(20);
-  if(r.error)throw r.error;
-  lbStatus.textContent=r.data.length?'En yüksek skorlar':'Henüz skor yok';
-  lbList.innerHTML=r.data.map(x=>`<div style="display:flex;justify-content:space-between;padding:9px 6px;border-bottom:1px solid #ffffff18"><b>#${x.rank} ${escapeHtml(x.player_name||'PLAYER')}</b><b>${Math.floor(x.score)}</b></div>`).join('');
- }catch(e){lbStatus.textContent='Leaderboard yüklenemedi.'}
-}
-function escapeHtml(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]));}
-async function saveScore(){
- if(scoreSaved||!sb)return;
  const name=(playerNameEl.value.trim()||'PLAYER').slice(0,16);localStorage.setItem('shPlayerName',name);
  try{const r=await sb.from('Leaderboard').insert({player_name:name,score:Math.floor(score),rank:0});if(!r.error)scoreSaved=true}catch(e){}
 }
@@ -147,7 +131,6 @@ function gameOver(){
  if(!running)return;
  running=false;
  scoreSaved=false;
- loadSupabase();
  saveScore();
  document.getElementById('finalScore').textContent=Math.floor(score);
  document.getElementById('finalCoins').textContent=coins;
