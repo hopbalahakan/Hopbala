@@ -59,18 +59,41 @@ const menu=document.getElementById('menu'),over=document.getElementById('over'),
 const scoreEl=document.getElementById('score'),coinsEl=document.getElementById('coins'),worldEl=document.getElementById('world');
 const leaderboardEl=document.getElementById('leaderboard'),lbList=document.getElementById('lbList'),lbStatus=document.getElementById('lbStatus');
 const playerNameEl=document.getElementById('playerName');
-let sb=null,lbReady=false,scoreSaved=false;
+let sb=null,lbReady=false,scoreSaved=false,sbPromise=null;
 playerNameEl.value=localStorage.getItem('shPlayerName')||'';
 playerNameEl.addEventListener('input',()=>localStorage.setItem('shPlayerName',playerNameEl.value.trim().slice(0,16)));
 function loadSupabase(){
- if(sb||lbReady)return;
- const s=document.createElement('script');
- s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
- s.onload=()=>{try{sb=window.supabase.createClient('https://lvijwqfhgnuzgxjcwzge.supabase.co','sb_publishable_yhRiqklpkQBN3eF6zBtkAg_pgrhfgxq');lbReady=true}catch(e){lbReady=false}};
- s.onerror=()=>{lbReady=false}; document.head.appendChild(s);
+ if(sb)return Promise.resolve(sb);
+ if(sbPromise)return sbPromise;
+ sbPromise=new Promise(resolve=>{
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+  s.onload=()=>{try{sb=window.supabase.createClient('https://lvijwqfhgnuzgxjcwzge.supabase.co','sb_publishable_yhRiqklpkQBN3eF6zBtkAg_pgrhfgxq');lbReady=true;resolve(sb)}catch(e){lbReady=false;resolve(null)}};
+  s.onerror=()=>{lbReady=false;resolve(null)};
+  document.head.appendChild(s);
+ });
+ return sbPromise;
 }
 async function loadLeaderboard(){
- leaderboardEl.classList.remove('hidden');lbStatus.textContent='Yükleniyor...';lbList.innerHTML='';loadSupabase();
+ leaderboardEl.classList.remove('hidden');lbStatus.textContent='Yükleniyor...';lbList.innerHTML='';
+ await loadSupabase();
+ if(!sb){lbStatus.textContent='Leaderboard bağlantısı şu an kullanılamıyor.';return}
+ try{
+  const r=await sb.from('leaderboard_ranked').select('rank,player_name,score,created_at').order('rank',{ascending:true}).limit(20);
+  if(r.error)throw r.error;
+  lbStatus.textContent=r.data.length?'En yüksek skorlar':'Henüz skor yok';
+  lbList.innerHTML=r.data.map(x=>`<div style="display:flex;justify-content:space-between;padding:9px 6px;border-bottom:1px solid #ffffff18"><b>#${x.rank} ${escapeHtml(x.player_name||'PLAYER')}</b><b>${Math.floor(x.score)}</b></div>`).join('');
+ }catch(e){lbStatus.textContent='Leaderboard yüklenemedi.'}
+}
+function escapeHtml(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+async function saveScore(){
+ if(scoreSaved)return;
+ await loadSupabase();
+ if(!sb)return;
+ const name=(playerNameEl.value.trim()||'PLAYER').slice(0,16);localStorage.setItem('shPlayerName',name);
+ try{const r=await sb.from('Leaderboard').insert({player_name:name,score:Math.floor(score),rank:0});if(!r.error)scoreSaved=true}catch(e){}
+}
+loadSupabase();
  for(let i=0;i<30 && !sb;i++)await new Promise(r=>setTimeout(r,100));
  if(!sb){lbStatus.textContent='Leaderboard bağlantısı şu an kullanılamıyor.';return}
  try{
@@ -125,7 +148,7 @@ function gameOver(){
  running=false;
  scoreSaved=false;
  loadSupabase();
- setTimeout(saveScore,0);
+ saveScore();
  document.getElementById('finalScore').textContent=Math.floor(score);
  document.getElementById('finalCoins').textContent=coins;
  over.classList.remove('hidden');
