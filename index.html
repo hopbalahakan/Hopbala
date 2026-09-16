@@ -38,6 +38,7 @@ button{border:0;border-radius:15px;padding:15px 30px;background:#fff;color:#0714
  <div class="card">
   <div class="logo">💥</div><div class="title" style="font-size:30px">OYUN BİTTİ</div>
   <p>Skor: <b id="finalScore">0</b><br>Coin: <b id="finalCoins">0</b></p>
+  <div id="saveStatus" class="tip">Skor kaydediliyor...</div>
   <button id="retry">TEKRAR OYNA</button>
  </div>
 </div>
@@ -59,7 +60,8 @@ const menu=document.getElementById('menu'),over=document.getElementById('over'),
 const scoreEl=document.getElementById('score'),coinsEl=document.getElementById('coins'),worldEl=document.getElementById('world');
 const leaderboardEl=document.getElementById('leaderboard'),lbList=document.getElementById('lbList'),lbStatus=document.getElementById('lbStatus');
 const playerNameEl=document.getElementById('playerName');
-let sb=null,lbReady=false,scoreSaved=false,sbPromise=null;
+const saveStatusEl=document.getElementById('saveStatus');
+let sb=null,lbReady=false,scoreSaved=false,sbPromise=null,savePromise=null;
 playerNameEl.value=localStorage.getItem('shPlayerName')||'';
 playerNameEl.addEventListener('input',()=>localStorage.setItem('shPlayerName',playerNameEl.value.trim().slice(0,16)));
 function loadSupabase(){
@@ -76,22 +78,38 @@ function loadSupabase(){
 }
 async function loadLeaderboard(){
  leaderboardEl.classList.remove('hidden');lbStatus.textContent='Yükleniyor...';lbList.innerHTML='';
+ if(savePromise)await savePromise;
  await loadSupabase();
  if(!sb){lbStatus.textContent='Leaderboard bağlantısı şu an kullanılamıyor.';return}
  try{
-  const r=await sb.from('leaderboard_ranked').select('rank,player_name,score,created_at').order('rank',{ascending:true}).limit(20);
+  const r=await sb.from('Leaderboard').select('player_name,score,created_at').order('score',{ascending:false}).order('created_at',{ascending:true}).limit(20);
   if(r.error)throw r.error;
-  lbStatus.textContent=r.data.length?'En yüksek skorlar':'Henüz skor yok';
-  lbList.innerHTML=r.data.map(x=>`<div style="display:flex;justify-content:space-between;padding:9px 6px;border-bottom:1px solid #ffffff18"><b>#${x.rank} ${escapeHtml(x.player_name||'PLAYER')}</b><b>${Math.floor(x.score)}</b></div>`).join('');
- }catch(e){lbStatus.textContent='Leaderboard yüklenemedi.'}
+  const rows=(r.data||[]).map((x,i)=>({...x,rank:i+1}));
+  lbStatus.textContent=rows.length?'En yüksek skorlar':'Henüz skor yok';
+  lbList.innerHTML=rows.map(x=>`<div style="display:flex;justify-content:space-between;padding:9px 6px;border-bottom:1px solid #ffffff18"><b>#${x.rank} ${escapeHtml(x.player_name||'PLAYER')}</b><b>${Math.floor(x.score)}</b></div>`).join('');
+ }catch(e){lbStatus.textContent='Leaderboard yüklenemedi.';console.error('Leaderboard load error',e)}
 }
-function escapeHtml(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]));}
-async function saveScore(){
- if(scoreSaved)return;
- await loadSupabase();
- if(!sb)return;
- const name=(playerNameEl.value.trim()||'PLAYER').slice(0,16);localStorage.setItem('shPlayerName',name);
- try{const r=await sb.from('Leaderboard').insert({player_name:name,score:Math.floor(score),rank:0});if(!r.error)scoreSaved=true}catch(e){}
+function escapeHtml(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function saveScore(finalScore){
+ if(scoreSaved)return Promise.resolve(true);
+ if(savePromise)return savePromise;
+ savePromise=(async()=>{
+  await loadSupabase();
+  if(!sb){saveStatusEl.textContent='Skor kaydedilemedi: bağlantı yok.';return false}
+  const name=(playerNameEl.value.trim()||'PLAYER').slice(0,16);localStorage.setItem('shPlayerName',name);
+  try{
+   const r=await sb.from('Leaderboard').insert({player_name:name,score:Math.floor(finalScore)});
+   if(r.error)throw r.error;
+   scoreSaved=true;
+   saveStatusEl.textContent='✓ Skor kaydedildi';
+   return true;
+  }catch(e){
+   saveStatusEl.textContent='Skor kaydedilemedi. Tekrar dene.';
+   console.error('Leaderboard save error',e);
+   return false;
+  }
+ })();
+ return savePromise;
 }
 loadSupabase();
 
@@ -130,11 +148,13 @@ function begin(){
 function gameOver(){
  if(!running)return;
  running=false;
- scoreSaved=false;
- saveScore();
- document.getElementById('finalScore').textContent=Math.floor(score);
+ scoreSaved=false;savePromise=null;
+ const finalScore=Math.floor(score);
+ document.getElementById('finalScore').textContent=finalScore;
  document.getElementById('finalCoins').textContent=coins;
+ saveStatusEl.textContent='Skor kaydediliyor...';
  over.classList.remove('hidden');
+ saveScore(finalScore);
 }
 function jump(){
  if(!running)return;
@@ -201,7 +221,6 @@ function draw(){
  g.addColorStop(0,wd.b);g.addColorStop(1,world===4?'#9dd8f4':wd.b);
  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
 
- // background
  if(world===0){
    ctx.fillStyle='#ffffff';
    stars.forEach(s=>{s.x-=speed*.025*(s.s/2);if(s.x<0)s.x=w;ctx.globalAlpha=.25+s.s*.2;ctx.fillRect(s.x,s.y,s.s,s.s)});
@@ -224,7 +243,6 @@ function draw(){
    ctx.globalAlpha=1;
  }
 
- // obstacles
  obs.forEach(o=>{
    ctx.fillStyle=wd.a;
    ctx.shadowBlur=world===1?16:0;ctx.shadowColor=wd.a;
@@ -234,7 +252,6 @@ function draw(){
    ctx.fillStyle='#ffffff55';ctx.fillRect(o.x,o.top-5,o.width,5);ctx.fillRect(o.x,o.bottom,o.width,5);
  });
 
- // coins
  cs.forEach(q=>{
    ctx.save();ctx.translate(q.x,q.y);ctx.scale(.8+.2*Math.abs(Math.cos(q.phase)),1);
    ctx.fillStyle='#ffd447';ctx.beginPath();ctx.arc(0,0,q.r,0,6.28);ctx.fill();
